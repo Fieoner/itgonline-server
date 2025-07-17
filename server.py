@@ -92,6 +92,9 @@ class Room:
             server.broadcast_rooms()
         )
 
+        for c in self.clients:
+            c.ready = False
+
         log.info(f"[{self.name}] Game started")
 
     async def handle_leave(self, data, client):
