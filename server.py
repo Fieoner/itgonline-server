@@ -18,6 +18,7 @@ class Client:
         self.websocket = websocket
         self.room = None
         self.players = []
+        self.ready = False
 
     async def send(self, message):
         try:
@@ -75,6 +76,15 @@ class Room:
         self.broadcast_players()
 
     async def handle_start(self, data, client):
+        for c in self.clients:
+            if not c.ready:
+                await client.send({"error": "Not all players are ready"})
+                return
+            
+        if not self.state == "waiting":
+            await client.send({"error": "Game already started"})
+            return
+        
         self.state = "playing"
         
         await asyncio.gather(
@@ -87,6 +97,18 @@ class Room:
     async def handle_leave(self, data, client):
         log.info(f"[{self.name}] Client requested to leave room")
         self.remove(client)
+
+    async def handle_ready(self, data, client):
+        if not self.state == "waiting":
+            await client.send({"error": "Cannot ready up, game already started"})
+            return
+        
+        if 'ready' not in data or not isinstance(data['ready'], bool):
+            await client.send({"error": "Missing 'ready' status"})
+            return
+
+        client.ready = data['ready']
+        self.broadcast_players()
 
     def add(self, client):
         if client in self.clients:
@@ -103,6 +125,11 @@ class Room:
         client.room = None
         log.info(f"Client left room '{self.name}'")
 
+        if self.state == "playing":
+            for p in client.players:
+                if p in self.scores:
+                    self.scores[p]["failed"] = True
+
         if self.is_empty():
             log.info(f"Room '{self.name}' is empty, removing it")
             del server.rooms[self.name]
@@ -112,10 +139,13 @@ class Room:
     def broadcast_players(self):
         players = []
         for client in self.clients:
-            players = players + client.players
+            for player in client.players:
+                players.append({
+                    "name": player,
+                    "ready": client.ready
+                })
 
-        players.sort()  # Sort players alphabetically
-
+        players.sort(key=lambda x: x["name"].lower())  # Sort by player name
         log.info(f"[{self.name}] Broadcasting players: {players}")
 
         asyncio.create_task(self.broadcast({
@@ -143,7 +173,7 @@ class Room:
         scoresSend = []
         for player, data in self.scores.items():
             scoresSend.append({
-                "playerName": player,
+                "player": player,
                 "score": data["score"],
                 "failed": data["failed"]
             })
