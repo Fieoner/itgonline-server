@@ -38,6 +38,8 @@ class Client:
         if self.room:
             self.room.remove(self)
 
+        self.ready = False
+        
         room = server.get_or_create_room(room_name)
         room.add(self)
 
@@ -91,9 +93,6 @@ class Room:
             self.broadcast({"action": "start"}),
             server.broadcast_rooms()
         )
-
-        for c in self.clients:
-            c.ready = False
 
         log.info(f"[{self.name}] Game started")
 
